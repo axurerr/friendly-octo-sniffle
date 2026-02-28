@@ -92,15 +92,7 @@ S = {
     InfStamina = {On = false, Connection = nil},
     AimBot = {Enabled = false, AimKey = Enum.UserInputType.MouseButton2, Smoothness = 0.1, FOV = 100, ShowFOV = true, FOVColor = Color3.fromRGB(255, 255, 255), FOVTransparency = 0.5, WallCheck = true, DownedCheck = true, Prediction = 100, TargetPart = "Head", Connection = nil, Target = nil, FOVCircle = nil, FOVUpdateConnection = nil, FOVPosition = Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y/2), Sticky = true},
     ChinaHat = {Enabled = false, Color = Color3.fromRGB(255, 105, 180), Hat = nil, Connection = nil},
-        PlayerChams = {
-        Enabled = false,
-        OccludedColor = Color3.fromRGB(128, 0, 128),  -- Фиолетовый для скрытых частей
-        VisibleColor = Color3.fromRGB(255, 0, 255),  -- Розовый для видимых частей
-        OccludedTransparency = 0.7,
-        VisibleTransparency = 0.3,
-        AdornmentsCache = {},
-        Connection = nil
-    },
+    PlayerChams = {Enabled = false, VisibleColor = Color3.fromRGB(255, 0, 0), OccludedColor = Color3.fromRGB(255, 255, 255), WallColor = Color3.fromRGB(0, 255, 255), Adornments = {}, Connection = nil},
     ESPDistance = {Value = 100, Min = 50, Max = 1000},
     Blur = {Enabled = false, BlurEffect = nil, Connection = nil, LastLookVector = nil, CurrentLookVector = nil, RotationSpeed = 0},
     Freecam = {Enabled = false, Speed = 50, Connection = nil, KeysDown = {}, Rotating = false, OnMobile = not UIS.KeyboardEnabled},
@@ -653,191 +645,177 @@ local function toggleChinaHat(state)
     end
 end
 
--- ==================== НОВЫЕ PLAYER CHAMS ФУНКЦИИ ====================
+-- ==================== PLAYER CHAMS ФУНКЦИИ (НОВЫЕ) ====================
 
-local function IsEnemy(player)
-    if player == LP then return false end
-    if player.Team and LP.Team then
-        return player.Team ~= LP.Team
-    end
-    return true
+if not S.PlayerChams then
+    S.PlayerChams = {
+        Enabled = false,
+        OccludedColor = Color3.fromRGB(128, 0, 128),
+        VisibleColor = Color3.fromRGB(255, 0, 255),
+        OccludedTransparency = 0.7,
+        VisibleTransparency = 0.3,
+        Adornments = {},
+        Connection = nil
+    }
 end
 
-local function CreateAdornment(part, isHead, layer)
+-- Список частей тела, которые не нужно подсвечивать (можно добавить, если нужно)
+local IGNORE_PARTS = { ["HumanoidRootPart"] = true, ["Handle"] = true }
+
+-- Функция для проверки, является ли игрок врагом (учитывает команды)
+local function IsEnemy(player)
+    if player == LP then return false end
+    -- Проверка на наличие команды, чтобы избежать ошибок
+    local myTeam = LP.Team
+    local targetTeam = player.Team
+    if myTeam and targetTeam then
+        return myTeam ~= targetTeam
+    end
+    return true -- Если нет команд, считаем всех кроме себя врагами
+end
+
+-- Функция для создания одного адорнмента (слой)
+local function CreateSingleAdornment(part, isHead, layer)
     local adorn
-    
     if isHead then
         adorn = Instance.new("CylinderHandleAdornment")
-        adorn.Height = (layer == 1) and 0.87 or 1.02
-        adorn.Radius = (layer == 1) and 0.5 or 0.65
+        -- Размеры для головы, чтобы красиво облегало
+        local height = (layer == 1) and 0.87 or 1.02
+        local radius = (layer == 1) and 0.5 or 0.65
+        adorn.Height = height
+        adorn.Radius = radius
     else
         adorn = Instance.new("BoxHandleAdornment")
+        -- Размеры для тела, чуть больше/меньше оригинала для двух слоев
         local offset = (layer == 1) and -0.05 or 0.05
         adorn.Size = part.Size + Vector3.new(offset, offset, offset)
     end
-    
+
+    adorn.Name = (layer == 1) and "OccludedLayer" or "VisibleLayer"
     adorn.Adornee = part
-    adorn.Parent = game:GetService("CoreGui")
     adorn.ZIndex = (layer == 1) and 2 or 1
-    adorn.AlwaysOnTop = (layer == 1)
+    adorn.AlwaysOnTop = (layer == 1) -- Occluded слой всегда сверху, чтобы быть видимым сквозь стены
     adorn.Visible = false
-    
+    adorn.Parent = part -- Родитель - сама часть, чтобы адорнмент двигался вместе с ней
     return adorn
 end
 
-local function ApplyChams(player)
-    if player == LP then return end
-    if not player.Character then return end
-    
-    -- Проверка дистанции ESP
-    local localRoot = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-    local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
-    
-    if localRoot and targetRoot then
-        local distance = (localRoot.Position - targetRoot.Position).Magnitude
-        if distance > S.ESPDistance.Value then
-            -- Если дистанция слишком большая, скрываем все адорнменты этого игрока
-            for part, adorns in pairs(S.PlayerChams.AdornmentsCache) do
-                if part:IsDescendantOf(player.Character) then
-                    for _, adorn in ipairs(adorns) do
-                        if adorn then adorn.Visible = false end
-                    end
-                end
-            end
-            return
-        end
-    end
-    
-    for _, part in pairs(player.Character:GetChildren()) do
-        if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
-            if not S.PlayerChams.AdornmentsCache[part] then
-                S.PlayerChams.AdornmentsCache[part] = {
-                    CreateAdornment(part, part.Name == "Head", 1),
-                    CreateAdornment(part, part.Name == "Head", 2)
+-- Функция для применения чеймсов к конкретному игроку
+local function ApplyChamsToPlayer(player)
+    if player == LP or not player.Character then return end
+    local character = player.Character
+
+    for _, part in pairs(character:GetChildren()) do
+        if part:IsA("BasePart") and not IGNORE_PARTS[part.Name] then
+            -- Проверяем, есть ли уже адорнменты для этой части
+            if not S.PlayerChams.Adornments[part] then
+                -- Создаем оба слоя и сохраняем их
+                S.PlayerChams.Adornments[part] = {
+                    CreateSingleAdornment(part, part.Name == "Head", 1), -- Occluded
+                    CreateSingleAdornment(part, part.Name == "Head", 2)  -- Visible
                 }
             end
-            
-            local ad = S.PlayerChams.AdornmentsCache[part]
-            local visible = S.PlayerChams.Enabled and S.ESP.On and IsEnemy(player)
-            
-            if ad[1] and ad[2] then
-                -- Occluded слой (всегда сверху, виден сквозь стены)
-                ad[1].Visible = visible
-                ad[1].Color3 = S.PlayerChams.OccludedColor
-                ad[1].Transparency = S.PlayerChams.OccludedTransparency
-                
-                -- Visible слой (обычный, виден только когда часть видна)
-                ad[2].Visible = visible
-                ad[2].AlwaysOnTop = false
-                ad[2].ZIndex = 1
-                ad[2].Color3 = S.PlayerChams.VisibleColor
-                ad[2].Transparency = S.PlayerChams.VisibleTransparency
-            end
+
+            local ad = S.PlayerChams.Adornments[part]
+            local isEnemy = IsEnemy(player)
+
+            -- Обновляем свойства видимого слоя (2)
+            ad[2].Visible = S.PlayerChams.Enabled and isEnemy
+            ad[2].Color3 = S.PlayerChams.VisibleColor
+            ad[2].Transparency = S.PlayerChams.VisibleTransparency
+            ad[2].AlwaysOnTop = false -- Этот слой ведет себя как обычная часть
+
+            -- Обновляем свойства скрытого слоя (1)
+            ad[1].Visible = S.PlayerChams.Enabled and isEnemy
+            ad[1].Color3 = S.PlayerChams.OccludedColor
+            ad[1].Transparency = S.PlayerChams.OccludedTransparency
+            ad[1].AlwaysOnTop = true -- Этот слой всегда сверху, чтобы быть видимым сквозь стены
         end
     end
 end
 
-function UpdateAllChams()
-    if not S.PlayerChams.Enabled or not S.ESP.On then
-        -- Если чамсы или ESP выключены, скрываем все
-        for part, adorns in pairs(S.PlayerChams.AdornmentsCache) do
-            for _, adorn in ipairs(adorns) do
-                if adorn then adorn.Visible = false end
-            end
+-- Функция для обновления чеймсов у всех игроков
+local function UpdateAllChams()
+    if not S.PlayerChams.Enabled then
+        -- Если чеймсы отключены, просто скрываем все адорнменты
+        for _, adTable in pairs(S.PlayerChams.Adornments) do
+            if adTable[1] then adTable[1].Visible = false end
+            if adTable[2] then adTable[2].Visible = false end
         end
         return
     end
-    
+
+    -- Проходим по всем игрокам и применяем чеймсы
     for _, player in pairs(Plrs:GetPlayers()) do
-        ApplyChams(player)
+        ApplyChamsToPlayer(player)
     end
 end
 
-local function TrackPlayer(player)
-    if player == LP then return end
-    
-    player.CharacterAdded:Connect(function()
-        task.wait(0.5)
-        ApplyChams(player)
-    end)
-    
-    player:GetPropertyChangedSignal("Team"):Connect(function()
-        ApplyChams(player)
-    end)
-end
-
+-- Функция для настройки постоянного обновления (по рендеру или реже)
 local function setupPlayerChams()
     if S.PlayerChams.Connection then
         S.PlayerChams.Connection:Disconnect()
     end
-    
-    -- Очищаем старый кеш при включении
-    S.PlayerChams.AdornmentsCache = {}
-    
-    -- Подключаемся к Heartbeat для постоянного обновления
-    S.PlayerChams.Connection = RS.Heartbeat:Connect(function()
-        UpdateAllChams()
-    end)
-    
-    -- Отслеживаем новых игроков
-    for _, player in pairs(Plrs:GetPlayers()) do
-        if player ~= LP then
-            TrackPlayer(player)
-            if player.Character then
-                task.wait(0.5)
-                ApplyChams(player)
-            end
-        end
-    end
-    
-    Plrs.PlayerAdded:Connect(TrackPlayer)
-    
-    -- Очищаем кеш, когда деталь удаляется
-    game.DescendantRemoving:Connect(function(descendant)
-        if S.PlayerChams.AdornmentsCache[descendant] then
-            S.PlayerChams.AdornmentsCache[descendant] = nil
-        end
-    end)
-    
-    Lib:Notify("Player Chams enabled", 2)
+    -- Используем Heartbeat для плавности, но можно и RenderStepped
+    S.PlayerChams.Connection = RS.Heartbeat:Connect(UpdateAllChams)
 end
 
-local function disablePlayerChams()
-    if S.PlayerChams.Connection then
-        S.PlayerChams.Connection:Disconnect()
-        S.PlayerChams.Connection = nil
-    end
-    
-    -- Скрываем и удаляем все адорнменты
-    for part, adorns in pairs(S.PlayerChams.AdornmentsCache) do
-        for _, adorn in ipairs(adorns) do
-            if adorn then
-                adorn.Visible = false
-                adorn:Destroy()
-            end
-        end
-    end
-    S.PlayerChams.AdornmentsCache = {}
-    
-    Lib:Notify("Player Chams disabled", 2)
-end
-
+-- Функция для включения/выключения чеймсов
 local function togglePlayerChams(state)
-    if state and not S.ESP.On then
-        Lib:Notify("ESP system must be enabled first!", 2)
-        return false
-    end
-    
     S.PlayerChams.Enabled = state
-    
+
     if state then
         setupPlayerChams()
+        -- Применяем ко всем существующим игрокам сразу
+        for _, player in pairs(Plrs:GetPlayers()) do
+            ApplyChamsToPlayer(player)
+        end
+        Lib:Notify("Player Chams enabled", 2)
     else
-        disablePlayerChams()
+        if S.PlayerChams.Connection then
+            S.PlayerChams.Connection:Disconnect()
+            S.PlayerChams.Connection = nil
+        end
+        -- Скрываем все адорнменты
+        UpdateAllChams()
+        Lib:Notify("Player Chams disabled", 2)
     end
-    
-    return S.PlayerChams.Enabled
 end
+
+-- Обработчики для новых игроков и их персонажей
+Plrs.PlayerAdded:Connect(function(player)
+    if player == LP then return end
+    -- Когда игрок появляется, применяем к нему чеймсы
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5) -- Небольшая задержка, чтобы персонаж полностью загрузился
+        if S.PlayerChams.Enabled then
+            ApplyChamsToPlayer(player)
+        end
+    end)
+    -- Если у игрока уже есть персонаж (например, он был в игре до загрузки скрипта)
+    if player.Character then
+        task.wait(0.5)
+        if S.PlayerChams.Enabled then
+            ApplyChamsToPlayer(player)
+        end
+    end
+end)
+
+-- Обработчик смены команды
+Plrs:GetPropertyChangedSignal("Team"):Connect(function()
+    if S.PlayerChams.Enabled then
+        UpdateAllChams()
+    end
+end)
+
+-- Очистка адорнментов при удалении части
+game.DescendantRemoving:Connect(function(descendant)
+    if S.PlayerChams.Adornments[descendant] then
+        S.PlayerChams.Adornments[descendant] = nil
+    end
+end)
+
+-- ==================== КОНЕЦ PLAYER CHAMS ФУНКЦИЙ ====================
 
 -- ==================== AIMBOT ФУНКЦИИ ====================
 
@@ -7870,44 +7848,57 @@ VisL:AddToggle("ChinaHatToggle", {
     end
 })
 
--- Player Chams Toggle с новыми настройками
+-- Player Chams (НОВЫЙ БЛОК)
 local ChamsToggle = VisL:AddToggle("PlayerChamsToggle", {
     Text = "Player Chams",
-    Default = false,
-    Callback = function(v)
-        if v and not S.ESP.On then
+    Default = S.PlayerChams.Enabled,
+    Tooltip = "Shows 2D/3D boxes on enemy players",
+    Callback = function(state)
+        -- Важно: Включаем/выключаем через нашу функцию, которая также проверит ESP
+        if state and not S.ESP.On then
             Toggles.PlayerChamsToggle:SetValue(false)
             Lib:Notify("ESP system must be enabled first!", 2)
             return
         end
-        togglePlayerChams(v)
+        togglePlayerChams(state)
     end
 })
 
--- ColorPicker для Visible Color (без названия)
+-- Добавляем ColorPicker для Visible цвета (БЕЗ названия, просто пикер рядом с переключателем)
 ChamsToggle:AddColorPicker("PlayerChamsVisibleColor", {
     Default = S.PlayerChams.VisibleColor,
     Title = "Visible Color",
-    Transparency = 0.3,
+    Transparency = S.PlayerChams.VisibleTransparency, -- Показываем текущую прозрачность в пикере
     Callback = function(color)
         S.PlayerChams.VisibleColor = color
+        -- Обновляем все адорнменты
+        for _, adTable in pairs(S.PlayerChams.Adornments) do
+            if adTable[2] then
+                adTable[2].Color3 = color
+            end
+        end
         Lib:Notify("Visible Color changed", 2)
     end
 })
 
--- ColorPicker для Occluded Color (без названия)
+-- Добавляем ColorPicker для Occluded цвета (БЕЗ названия)
 ChamsToggle:AddColorPicker("PlayerChamsOccludedColor", {
     Default = S.PlayerChams.OccludedColor,
     Title = "Occluded Color",
-    Transparency = 0.7,
+    Transparency = S.PlayerChams.OccludedTransparency, -- Показываем текущую прозрачность в пикере
     Callback = function(color)
         S.PlayerChams.OccludedColor = color
+        for _, adTable in pairs(S.PlayerChams.Adornments) do
+            if adTable[1] then
+                adTable[1].Color3 = color
+            end
+        end
         Lib:Notify("Occluded Color changed", 2)
     end
 })
 
--- Слайдер для Visible Transparency
-ChamsToggle:AddSlider("PlayerChamsVisibleTransparency", {
+-- Слайдер для прозрачности видимого слоя
+VisL:AddSlider("PlayerChamsVisibleTransparency", {
     Text = "Visible Transparency",
     Default = S.PlayerChams.VisibleTransparency,
     Min = 0,
@@ -7916,12 +7907,17 @@ ChamsToggle:AddSlider("PlayerChamsVisibleTransparency", {
     Compact = false,
     Callback = function(value)
         S.PlayerChams.VisibleTransparency = value
+        for _, adTable in pairs(S.PlayerChams.Adornments) do
+            if adTable[2] then
+                adTable[2].Transparency = value
+            end
+        end
         Lib:Notify("Visible Transparency: " .. string.format("%.2f", value), 2)
     end
 })
 
--- Слайдер для Occluded Transparency
-ChamsToggle:AddSlider("PlayerChamsOccludedTransparency", {
+-- Слайдер для прозрачности скрытого слоя
+VisL:AddSlider("PlayerChamsOccludedTransparency", {
     Text = "Occluded Transparency",
     Default = S.PlayerChams.OccludedTransparency,
     Min = 0,
@@ -7930,6 +7926,11 @@ ChamsToggle:AddSlider("PlayerChamsOccludedTransparency", {
     Compact = false,
     Callback = function(value)
         S.PlayerChams.OccludedTransparency = value
+        for _, adTable in pairs(S.PlayerChams.Adornments) do
+            if adTable[1] then
+                adTable[1].Transparency = value
+            end
+        end
         Lib:Notify("Occluded Transparency: " .. string.format("%.2f", value), 2)
     end
 })
@@ -8235,3 +8236,4 @@ _G.SAAPI = {
 
 Lib:Notify("SA Ready!", 3)
 end
+
