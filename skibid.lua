@@ -647,10 +647,6 @@ end
 
 -- ==================== PLAYER CHAMS ФУНКЦИИ ====================
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
-
 local AdornmentsCache = {}
 local IgnoreNames = { ["HumanoidRootPart"] = true }
 
@@ -674,15 +670,15 @@ local function CreateAdornment(part, isHead, layer)
 end
 
 local function IsEnemy(player)
-    if player == LocalPlayer then return false end
-    if player.Team and LocalPlayer.Team then
-        return player.Team ~= LocalPlayer.Team
+    if player == LP then return false end
+    if player.Team and LP.Team then
+        return player.Team ~= LP.Team
     end
     return true
 end
 
 local function ApplyChams(player)
-    if player == LocalPlayer then return end
+    if player == LP then return end
     if not player.Character then return end
     
     for _, part in pairs(player.Character:GetChildren()) do
@@ -711,21 +707,27 @@ local function ApplyChams(player)
 end
 
 local function UpdatePlayerChams()
-    for _, player in pairs(Players:GetPlayers()) do
-        ApplyChams(player)
+    if not S.PlayerChams.Enabled then return end
+    
+    for _, player in pairs(Plrs:GetPlayers()) do
+        if player ~= LP and player.Character then
+            pcall(function()
+                ApplyChams(player)
+            end)
+        end
     end
 end
 
 local function TrackPlayer(player)
-    if player == LocalPlayer then return end
+    if player == LP then return end
     
-    player.CharacterAdded:Connect(function()
+    player.CharacterAdded:Connect(function(char)
         task.wait(0.5)
-        ApplyChams(player)
-    end)
-    
-    player:GetPropertyChangedSignal("Team"):Connect(function()
-        ApplyChams(player)
+        if S.PlayerChams.Enabled then
+            pcall(function()
+                ApplyChams(player)
+            end)
+        end
     end)
 end
 
@@ -734,19 +736,22 @@ local function setupPlayerChams()
         S.PlayerChams.Connection:Disconnect()
     end
     
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
+    for _, player in pairs(Plrs:GetPlayers()) do
+        if player ~= LP then
             TrackPlayer(player)
             if player.Character then
-                task.wait(0.5)
-                ApplyChams(player)
+                pcall(function()
+                    ApplyChams(player)
+                end)
             end
         end
     end
     
-    Players.PlayerAdded:Connect(TrackPlayer)
+    Plrs.PlayerAdded:Connect(TrackPlayer)
     
-    S.PlayerChams.Connection = RunService.RenderStepped:Connect(UpdatePlayerChams)
+    S.PlayerChams.Connection = RS.Heartbeat:Connect(function()
+        pcall(UpdatePlayerChams)
+    end)
     
     game.DescendantRemoving:Connect(function(descendant)
         if AdornmentsCache[descendant] then
@@ -769,9 +774,11 @@ local function togglePlayerChams(state)
         
         for part, adornments in pairs(AdornmentsCache) do
             for _, adornment in pairs(adornments) do
-                if adornment then
-                    adornment:Destroy()
-                end
+                pcall(function()
+                    if adornment then
+                        adornment:Destroy()
+                    end
+                end)
             end
         end
         AdornmentsCache = {}
