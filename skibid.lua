@@ -46,7 +46,7 @@
     end)
 
 local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua"))()
-local TM = loadstring(game:HttpGet("https://raw.githubusercontent.com/buldozeryx/ThemeManager/refs/heads/main/ThemeManager.lua"))()
+local TM = loadstring(game:HttpGet("https://raw.githubusercontent.com/axurerr/ThemeManager/refs/heads/main/ThemeManager.lua"))()
 local SM = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/SaveManager.lua"))()
 
 local Plrs = game:GetService("Players")
@@ -92,7 +92,7 @@ S = {
     InfStamina = {On = false, Connection = nil},
     AimBot = {Enabled = false, AimKey = Enum.UserInputType.MouseButton2, Smoothness = 0.1, FOV = 100, ShowFOV = true, FOVColor = Color3.fromRGB(255, 255, 255), FOVTransparency = 0.5, WallCheck = true, DownedCheck = true, Prediction = 100, TargetPart = "Head", Connection = nil, Target = nil, FOVCircle = nil, FOVUpdateConnection = nil, FOVPosition = Vector2.new(Cam.ViewportSize.X/2, Cam.ViewportSize.Y/2), Sticky = true},
     ChinaHat = {Enabled = false, Color = Color3.fromRGB(255, 105, 180), Hat = nil, Connection = nil},
-    PlayerChams = {Enabled = false, VisibleColor = Color3.fromRGB(255, 0, 255), OccludedColor = Color3.fromRGB(128, 0, 128), VisibleTransparency = 0.3, OccludedTransparency = 0.7, Adornments = {}, Connection = nil},
+    PlayerChams = {Enabled = false, VisibleColor = Color3.fromRGB(255, 0, 0), OccludedColor = Color3.fromRGB(255, 255, 255), WallColor = Color3.fromRGB(0, 255, 255), Adornments = {}, Connection = nil},
     ESPDistance = {Value = 100, Min = 50, Max = 1000},
     Blur = {Enabled = false, BlurEffect = nil, Connection = nil, LastLookVector = nil, CurrentLookVector = nil, RotationSpeed = 0},
     Freecam = {Enabled = false, Speed = 50, Connection = nil, KeysDown = {}, Rotating = false, OnMobile = not UIS.KeyboardEnabled},
@@ -647,88 +647,97 @@ end
 
 -- ==================== PLAYER CHAMS ФУНКЦИИ ====================
 
-local AdornmentsCache = {}
-local IgnoreNames = { ["HumanoidRootPart"] = true }
-
-local function CreateAdornment(part, isHead, layer)
-    local adorn
-    if isHead then
-        adorn = Instance.new("CylinderHandleAdornment")
-        adorn.Height = (layer == 1) and 0.87 or 1.02
-        adorn.Radius = (layer == 1) and 0.5 or 0.65
-    else
-        adorn = Instance.new("BoxHandleAdornment")
-        local offset = (layer == 1) and -0.05 or 0.05
-        adorn.Size = part.Size + Vector3.new(offset, offset, offset)
-    end
-    adorn.Adornee = part
-    adorn.Parent = part
-    adorn.ZIndex = (layer == 1) and 2 or 1
-    adorn.AlwaysOnTop = (layer == 1)
-    adorn.Visible = false
-    return adorn
-end
-
-local function IsEnemy(player)
-    if player == LP then return false end
-    if player.Team and LP.Team then
-        return player.Team ~= LP.Team
-    end
-    return true
-end
-
-local function ApplyChams(player)
-    if player == LP then return end
-    if not player.Character then return end
-    
-    for _, part in pairs(player.Character:GetChildren()) do
-        if part:IsA("BasePart") and not IgnoreNames[part.Name] then
-            if not AdornmentsCache[part] then
-                AdornmentsCache[part] = {
-                    CreateAdornment(part, part.Name == "Head", 1),
-                    CreateAdornment(part, part.Name == "Head", 2)
-                }
+local function CreateAdornments(part)
+    local Adornments = {}
+    for vis = 1, 2 do
+        if part.Name == "Head" then
+            Adornments[vis] = Instance.new("CylinderHandleAdornment")
+            Adornments[vis].Height = 1.2
+            Adornments[vis].Radius = 0.78
+            Adornments[vis].CFrame = CFrame.new(Vector3.new(), Vector3.new(0, 1, 0))
+            if vis == 1 then
+                Adornments[vis].Radius = Adornments[vis].Radius - 0.15
+                Adornments[vis].Height = Adornments[vis].Height - 0.15
             end
-            
-            local ad = AdornmentsCache[part]
-            local visible = S.PlayerChams.Enabled and IsEnemy(player)
-            
-            ad[1].Visible = visible
-            ad[1].Color3 = S.PlayerChams.OccludedColor
-            ad[1].Transparency = S.PlayerChams.OccludedTransparency
-            
-            ad[2].Visible = visible
-            ad[2].AlwaysOnTop = true
-            ad[2].ZIndex = 9e9
-            ad[2].Color3 = S.PlayerChams.VisibleColor
-            ad[2].Transparency = S.PlayerChams.VisibleTransparency
+        else
+            Adornments[vis] = Instance.new("BoxHandleAdornment")
+            Adornments[vis].Size = part.Size + Vector3.new(0.2, 0.2, 0.2)
+            if vis == 1 then
+                Adornments[vis].Size = Adornments[vis].Size - Vector3.new(0.15, 0.15, 0.15)
+            end
         end
+        Adornments[vis].Parent = game:GetService("CoreGui")
+        Adornments[vis].Adornee = part
+        Adornments[vis].Name = vis == 1 and "Occluded" or "Visible"
+        Adornments[vis].ZIndex = vis == 1 and 2 or 1
+        Adornments[vis].AlwaysOnTop = vis == 1
     end
+    return Adornments
 end
 
 local function UpdatePlayerChams()
-    if not S.PlayerChams.Enabled then return end
-    
+    if not S.PlayerChams.Enabled then
+        for _, playerData in pairs(S.PlayerChams.Adornments) do
+            for _, adornmentsTable in pairs(playerData) do
+                for _, adornment in pairs(adornmentsTable) do
+                    adornment.Visible = false
+                end
+            end
+        end
+        return
+    end
+
+    local localRoot = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+    if not localRoot then return end
+
     for _, player in pairs(Plrs:GetPlayers()) do
-        if player ~= LP and player.Character then
-            pcall(function()
-                ApplyChams(player)
-            end)
+        if player == LP then continue end
+
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            if S.PlayerChams.Adornments[player] then
+                for _, adornmentsTable in pairs(S.PlayerChams.Adornments[player]) do
+                    for _, adornment in pairs(adornmentsTable) do
+                        adornment.Visible = false
+                    end
+                end
+            end
+            continue
+        end
+
+        local distance = (player.Character.HumanoidRootPart.Position - localRoot.Position).Magnitude
+        if distance > S.ESPDistance.Value then
+            if S.PlayerChams.Adornments[player] then
+                for _, adornmentsTable in pairs(S.PlayerChams.Adornments[player]) do
+                    for _, adornment in pairs(adornmentsTable) do
+                        adornment.Visible = false
+                    end
+                end
+            end
+            continue
+        end
+
+        if not S.PlayerChams.Adornments[player] then
+            S.PlayerChams.Adornments[player] = {}
+        end
+
+        for _, part in pairs(player.Character:GetChildren()) do
+            if part:IsA("BasePart") and table.find({"Head", "Torso", "Left Arm", "Right Arm", "Left Leg", "Right Leg"}, part.Name) then
+                if not S.PlayerChams.Adornments[player][part] then
+                    S.PlayerChams.Adornments[player][part] = CreateAdornments(part)
+                end
+                
+                S.PlayerChams.Adornments[player][part][1].Visible = true
+                S.PlayerChams.Adornments[player][part][1].Color3 = S.PlayerChams.OccludedColor
+                S.PlayerChams.Adornments[player][part][1].Transparency = 0
+                
+                S.PlayerChams.Adornments[player][part][2].Visible = true
+                S.PlayerChams.Adornments[player][part][2].Color3 = S.PlayerChams.VisibleColor
+                S.PlayerChams.Adornments[player][part][2].Transparency = 0.5
+                S.PlayerChams.Adornments[player][part][2].AlwaysOnTop = false
+                S.PlayerChams.Adornments[player][part][2].ZIndex = 1
+            end
         end
     end
-end
-
-local function TrackPlayer(player)
-    if player == LP then return end
-    
-    player.CharacterAdded:Connect(function(char)
-        task.wait(0.5)
-        if S.PlayerChams.Enabled then
-            pcall(function()
-                ApplyChams(player)
-            end)
-        end
-    end)
 end
 
 local function setupPlayerChams()
@@ -736,27 +745,8 @@ local function setupPlayerChams()
         S.PlayerChams.Connection:Disconnect()
     end
     
-    for _, player in pairs(Plrs:GetPlayers()) do
-        if player ~= LP then
-            TrackPlayer(player)
-            if player.Character then
-                pcall(function()
-                    ApplyChams(player)
-                end)
-            end
-        end
-    end
-    
-    Plrs.PlayerAdded:Connect(TrackPlayer)
-    
     S.PlayerChams.Connection = RS.Heartbeat:Connect(function()
-        pcall(UpdatePlayerChams)
-    end)
-    
-    game.DescendantRemoving:Connect(function(descendant)
-        if AdornmentsCache[descendant] then
-            AdornmentsCache[descendant] = nil
-        end
+        UpdatePlayerChams()
     end)
 end
 
@@ -772,16 +762,14 @@ local function togglePlayerChams(state)
             S.PlayerChams.Connection = nil
         end
         
-        for part, adornments in pairs(AdornmentsCache) do
-            for _, adornment in pairs(adornments) do
-                pcall(function()
-                    if adornment then
-                        adornment:Destroy()
-                    end
-                end)
+        for _, playerData in pairs(S.PlayerChams.Adornments) do
+            for _, adornmentsTable in pairs(playerData) do
+                for _, adornment in pairs(adornmentsTable) do
+                    adornment:Destroy()
+                end
             end
         end
-        AdornmentsCache = {}
+        S.PlayerChams.Adornments = {}
         
         Lib:Notify("Player Chams disabled", 2)
     end
@@ -7832,49 +7820,37 @@ local ChamsToggle = VisL:AddToggle("PlayerChamsToggle", {
     end
 })
 
-ChamsToggle:AddColorPicker("PlayerChamsOccludedColor", {
-    Default = S.PlayerChams.OccludedColor,
-    Title = "Occluded Color",
-    Transparency = 0,
-    Callback = function(v)
-        S.PlayerChams.OccludedColor = v
-        Lib:Notify("Occluded Color changed", 2)
-    end
-})
-
 ChamsToggle:AddColorPicker("PlayerChamsVisibleColor", {
     Default = S.PlayerChams.VisibleColor,
     Title = "Visible Color",
     Transparency = 0.5,
     Callback = function(v)
         S.PlayerChams.VisibleColor = v
+        for _, playerData in pairs(S.PlayerChams.Adornments) do
+            for _, adornmentsTable in pairs(playerData) do
+                if adornmentsTable[2] then
+                    adornmentsTable[2].Color3 = v
+                end
+            end
+        end
         Lib:Notify("Visible Color changed", 2)
     end
 })
 
-VisL:AddSlider("ChamsOccludedTransparency", {
-    Text = "Occluded Transparency",
-    Default = S.PlayerChams.OccludedTransparency,
-    Min = 0,
-    Max = 1,
-    Rounding = 2,
-    Compact = false,
+ChamsToggle:AddColorPicker("PlayerChamsOccludedColor", {
+    Default = S.PlayerChams.OccludedColor,
+    Title = "Occluded Color",
+    Transparency = 0,
     Callback = function(v)
-        S.PlayerChams.OccludedTransparency = v
-        Lib:Notify("Occluded Transparency: " .. math.round(v * 100) .. "%", 2)
-    end
-})
-
-VisL:AddSlider("ChamsVisibleTransparency", {
-    Text = "Visible Transparency",
-    Default = S.PlayerChams.VisibleTransparency,
-    Min = 0,
-    Max = 1,
-    Rounding = 2,
-    Compact = false,
-    Callback = function(v)
-        S.PlayerChams.VisibleTransparency = v
-        Lib:Notify("Visible Transparency: " .. math.round(v * 100) .. "%", 2)
+        S.PlayerChams.OccludedColor = v
+        for _, playerData in pairs(S.PlayerChams.Adornments) do
+            for _, adornmentsTable in pairs(playerData) do
+                if adornmentsTable[1] then
+                    adornmentsTable[1].Color3 = v
+                end
+            end
+        end
+        Lib:Notify("Occluded Color changed", 2)
     end
 })
 
