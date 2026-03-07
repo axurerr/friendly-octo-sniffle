@@ -1,4 +1,3 @@
-
     do
     local secActive = true
     local lastChk = tick()
@@ -45,6 +44,7 @@
             end)
         end
     end)
+end
 
 local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua"))()
 local TM = loadstring(game:HttpGet("https://raw.githubusercontent.com/buldozeryx/ThemeManager/refs/heads/main/ThemeManager.lua"))()
