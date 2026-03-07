@@ -46,7 +46,7 @@
     end)
 
 local Lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/Library.lua"))()
-local TM = loadstring(game:HttpGet("https://raw.githubusercontent.com/axurerr/ThemeManager/refs/heads/main/ThemeManager.lua"))()
+local TM = loadstring(game:HttpGet("https://raw.githubusercontent.com/buldozeryx/ThemeManager/refs/heads/main/ThemeManager.lua"))()
 local SM = loadstring(game:HttpGet("https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/addons/SaveManager.lua"))()
 
 local Plrs = game:GetService("Players")
